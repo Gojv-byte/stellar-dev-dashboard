@@ -27,6 +27,7 @@ import UserPreferences from '../components/preferences/UserPreferences';
 import NetworkIndicator from '../components/layout/NetworkIndicator';
 import NetworkSafetyBadge from '../components/layout/NetworkSafetyBadge';
 import { useWriteGuard } from '../hooks/useWriteGuard';
+import SubmissionTray from '../components/dashboard/SubmissionTray';
 import MobileNavigation from '../components/layout/MobileNavigation';
 import KeyboardNavigation from '../components/accessibility/KeyboardNavigation';
 import SkipLink from '../components/accessibility/SkipLink';
@@ -375,6 +376,9 @@ export default function DashboardLayout() {
           </ErrorBoundary>
         </main>
         <TourLauncher />
+        {/* Issue #981: submission progress lives in a module-level tracker, so
+            this survives every route change below it. */}
+        <SubmissionTray />
         <DevToolbar />
         <PredictiveFeatureSuggestions onNavigate={(tab: string) => navigate(`/${tab}`)} />
         <NotificationBell
