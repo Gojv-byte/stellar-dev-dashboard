@@ -1,6 +1,10 @@
 {
   "name": "stellar-dev-dashboard",
   "version": "0.1.0",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
   "description": "A real-time developer dashboard for the Stellar network with advanced AI-enhanced transaction fee prediction",
   "type": "module",
   "scripts": {
@@ -22,7 +26,8 @@
     "plugin:create": "node scripts/create-plugin.mjs",
     "format": "prettier --write package.json package-lock.json eslint.config.js tsconfig.json .github/workflows/ci.yml .prettierrc.json",
     "format:check": "prettier --check package.json package-lock.json eslint.config.js tsconfig.json .github/workflows/ci.yml .prettierrc.json",
-    "type-check": "tsc --noEmit",
+    "type-check": "node scripts/type-check.mjs",
+    "type-check:tsc": "tsc --noEmit",
     "test": "vitest run --config vitest.config.js",
     "test:watch": "vitest --config vitest.config.js",
     "test:ui": "vitest --ui --config vitest.config.js",
