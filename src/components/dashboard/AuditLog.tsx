@@ -174,7 +174,7 @@ const FilterBar = ({ onFilterChange }: FilterBarProps) => {
             color: 'var(--text-muted)',
             fontSize: '14px',
           }}>
-            🔍
+            {'\uD83D\uDD0D'}
           </span>
         </div>
 
@@ -195,7 +195,7 @@ const FilterBar = ({ onFilterChange }: FilterBarProps) => {
             gap: '6px',
           }}
         >
-          <span>⚙</span>
+          <span>{'⚙'}</span>
           Filters
           {(selectedSeverities.length > 0 || selectedCategories.length > 0) && (
             <span style={{
@@ -503,7 +503,7 @@ export default function AuditLog() {
         )}
       </EnhancedTable>
 
-        <div className="card" style={{
+      <div className="card" style={{
           background: 'var(--bg-elevated)',
           border: '1px solid var(--border)',
           borderRadius: 'var(--radius-md)',
@@ -526,7 +526,7 @@ export default function AuditLog() {
                     padding: '4px',
                   }}
                 >
-                  ✕
+                  {'✕'}
                 </button>
               </div>
 
@@ -586,12 +586,11 @@ export default function AuditLog() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', textAlign: 'center' }}>
-              <div style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.4 }}>📋</div>
+              <div style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.4 }}>{'\uD83D\uDCCB'}</div>
               <div style={{ fontSize: '13px' }}>Select an entry to view details</div>
             </div>
           )}
         </div>
-      </div>
     </div>
   );
 }
