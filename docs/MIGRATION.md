@@ -38,6 +38,26 @@ a codemod command.
 
 ## Active Migration Tracks
 
+### Shareable view links (query parameters)
+
+Shared view links use **query parameters**; the collaboration session feature
+uses a **hash fragment** (`#<base64>`). The two channels do not collide and may
+both be present in one URL. Existing hash-based collaboration links are
+unaffected — no migration is required for links already in the wild.
+
+New store state is **not** shared by default. To put a field in a shared link,
+add it to `ShareableViewState` and `selectShareableState()` in
+`src/lib/shareLinks.ts`, then to the encoder and the decoder. Fields outside
+that path cannot reach a URL.
+
+`ledgerPin` was added to the store and is deliberately excluded from
+`PERSIST_KEYS`: a pin belongs to a shared link and the current session, not to a
+durable preference. Persisting it would leave a stale pin silently applied to
+later, unrelated work in the same browser.
+
+Full details, including the security model and the ledger-pin support matrix,
+are in [SHARED_VIEW_LINKS.md](./SHARED_VIEW_LINKS.md).
+
 ### JavaScript → TypeScript
 
 The codebase is migrating from `.jsx` to `.tsx`. New components **must** be TypeScript.
@@ -99,6 +119,48 @@ style objects scattered across component files.
   status: 'planned', // → 'ready' once implemented
 }
 ```
+
+---
+
+### Structured Logging & `console.log` Migration (#965)
+
+All ad-hoc `console.log` calls in `src/` have been removed in favor of the structured logger in `src/lib/logging` to enforce sensitive data redaction (#774) and environment-based level filtering.
+
+**What changed:**
+- `no-console` is enforced as an ESLint error for `src/`.
+- Replace `console.log` with `logger.info`, `logger.debug`, `logger.warn`, or `logger.error` from `src/lib/logging`.
+- Log level defaults to `LogLevel.WARN` in production (`NODE_ENV === 'production'`) and `LogLevel.DEBUG` in development.
+- Sensitive values (Stellar secret keys `S...`, Bearer tokens, passwords, private keys, seeds, api keys) are automatically redacted across log messages, context objects, and tags.
+
+```ts
+// ❌ Legacy
+console.log('User signed in', user);
+
+// ✅ Modern
+import { logger } from '@/lib/logging';
+logger.info('User signed in', { userId: user.id });
+```
+
+---
+
+## Cross-tab state sync is now deterministic (#751)
+
+`src/utils/stateSync.js` persists settings and connected-account state with a
+versioned compare-and-swap envelope. See `docs/CROSS_TAB_STATE_SYNC.md` for the
+full guide (compatibility, security, migration).
+
+**What changed (read before upgrading):**
+
+- `syncState(key, value)` now stores an envelope `{ __v, __t, __w, value }`
+  instead of the raw JSON value. Read it back with `loadSyncedState(key)` or
+  `onStateChange`'s `value` argument. Pre-#751 raw values are still read
+  correctly (normalised to version 0).
+- `syncState` now returns `Promise<number>` (the assigned version) and **may
+  reject** (invalid input, unavailable storage, quota, exhausted retries). Call
+  sites must tolerate rejection.
+- `onStateChange` callback is now `(key, value, meta)` — `meta` carries
+  `{ version, writerId, timestamp }`.
+- New exports: `resolveStateConflict`, `getTabId`, `loadSyncedState`.
 
 ---
 

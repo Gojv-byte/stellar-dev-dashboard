@@ -5,12 +5,17 @@ import { simulateContractCall, isValidContractId } from "../../lib/stellar";
 import { addContractInteraction } from "../../lib/storage";
 import { generateId } from "../../lib/notifications";
 import ContractHistory from "./ContractHistory";
+import ContractEventDisplay from "./ContractEventDisplay";
 import { useContractRecommendations } from "../../hooks/useContractRecommendations";
 import { useGasPrediction } from "../../hooks/useGasPrediction";
 import { usePreferences } from "../../hooks/usePreferences";
 import { getContractInteractions } from "../../lib/storage";
 import { Sparkles, AlertTriangle, AlertCircle, HelpCircle } from "lucide-react";
 import GasCostEstimator from "./GasCostEstimator";
+import ResourceMetrics from "./ResourceMetrics";
+import MainnetReviewModal from "../security/MainnetReviewModal";
+import MainnetConfirmDialog from "../security/MainnetConfirmDialog";
+import { useWriteGuard } from "../../hooks/useWriteGuard";
 
 const ARGUMENT_TYPES = [
   { value: 'string', label: 'String' },
@@ -185,7 +190,13 @@ export default function ContractInteraction() {
   const [invokeLoading, setInvokeLoading] = useState(false);
   const [error, setError] = useState('');
   const [simulationResult, setSimulationResult] = useState(null);
+  const [previousFootprint, setPreviousFootprint] = useState(null);
   const [invokeResult, setInvokeResult] = useState(null);
+  const [invokeStatus, setInvokeStatus] = useState(null);
+  const [showMainnetReview, setShowMainnetReview] = useState(false);
+
+  // #983 — central write guard
+  const { guard, isReadOnlyLocked, dialogProps } = useWriteGuard();
 
   const { preferences, update } = usePreferences();
   const advancedPreferences = preferences?.advanced || {};
@@ -439,6 +450,11 @@ export default function ContractInteraction() {
   }, [form.functionName, contractFunctions]);
 
   function updateField(field, value) {
+    // Changing the contract or function invalidates the footprint baseline:
+    // diffs must only compare successive simulations of the same call (#849).
+    if (field === 'contractId' || field === 'functionName') {
+      setPreviousFootprint(null);
+    }
     setForm((current) => ({ ...current, [field]: value }));
   }
 
@@ -508,6 +524,7 @@ export default function ContractInteraction() {
         sourceAccount: form.sourceAccount || connectedAddress,
         network,
       });
+      setPreviousFootprint(simulationResult?.footprint ?? null);
       setSimulationResult(result);
 
       if (gasPrediction && result.cost) {
@@ -527,8 +544,22 @@ export default function ContractInteraction() {
   }
 
   async function handleInvoke() {
+    // #983 — route through central write guard (handles mainnet typed confirmation
+    // and session read-only lock). The per-component MainnetReviewModal is
+    // preserved as a secondary detailed review after the guard confirms.
+    guard({ action: 'invoke contract function', onConfirm: () => {
+      if (isMainnet) {
+        setShowMainnetReview(true);
+      } else {
+        _doInvoke();
+      }
+    }});
+  }
+
+  async function _doInvoke() {
     setError('');
     setInvokeResult(null);
+    setInvokeStatus('PENDING');
     setInvokeLoading(true);
 
     try {
@@ -539,15 +570,37 @@ export default function ContractInteraction() {
         sourceAccount: form.sourceAccount || connectedAddress,
         secretKey: form.secretKey,
         network,
+        onStatus: (status) => setInvokeStatus(status),
       });
       setInvokeResult(result);
-      await recordInteraction('invoke', 'success', result, null);
+      const resultStatus = String(result.status || '').toLowerCase();
+      const interactionStatus = ['success', 'failed', 'timeout', 'expired'].includes(resultStatus)
+        ? resultStatus
+        : 'error';
+      await recordInteraction('invoke', interactionStatus, result, result.error || null);
+      if (interactionStatus !== 'success') {
+        setError(result.error || `Invocation ${interactionStatus}`);
+      }
     } catch (err) {
+      setInvokeStatus(null);
       setError(err.message || 'Invocation failed');
       await recordInteraction('invoke', 'error', null, err.message || 'Invocation failed');
     } finally {
       setInvokeLoading(false);
     }
+  }
+
+  function buildMainnetReviewItems() {
+    const source = form.sourceAccount || connectedAddress || '—';
+    return [
+      { label: 'Network', value: 'Mainnet (Public)', highlight: true },
+      { label: 'Source', value: source ? `${source.slice(0, 8)}…${source.slice(-8)}` : '—', mono: true },
+      { label: 'Contract', value: form.contractId ? `${form.contractId.slice(0, 8)}…${form.contractId.slice(-8)}` : '—', mono: true },
+      { label: 'Function', value: form.functionName || '—', mono: true },
+      { label: 'Arguments', value: form.args.filter(a => a.value.trim()).length > 0
+          ? form.args.filter(a => a.value.trim()).map(a => `${a.name || a.type}: ${a.value}`).join(', ')
+          : 'none' },
+    ];
   }
 
   function handleReplay(record) {
@@ -559,13 +612,33 @@ export default function ContractInteraction() {
       args: record.args && record.args.length > 0 ? record.args : [{ type: "string", value: "", name: "" }]
     });
     setSimulationResult(null);
+    // A replayed call starts a fresh footprint baseline (#849).
+    setPreviousFootprint(null);
     setInvokeResult(null);
     setError('');
     setActiveTab('interact');
   }
 
   return (
+    <>
+    {/* #983 — mainnet write guard */}
+    <MainnetConfirmDialog {...dialogProps} />
     <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {isReadOnlyLocked && (
+        <div style={{
+          background: 'rgba(255,23,68,0.08)',
+          border: '1px solid var(--red)',
+          borderRadius: 'var(--radius-md)',
+          padding: '10px 14px',
+          fontSize: '12px',
+          color: 'var(--red)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}>
+          🔒 Mainnet read-only lock is active — contract invocations are blocked this session.
+        </div>
+      )}
       <div
         style={{
           display: 'flex',
@@ -799,32 +872,45 @@ export default function ContractInteraction() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "140px 1fr auto",
+                    gridTemplateColumns: hasSpecName ? "1fr auto" : "140px 1fr auto",
                     gap: "10px",
                     alignItems: "center",
                   }}
                 >
-                  <select
-                    value={arg.type}
-                    onChange={(e) => updateArgument(index, "type", e.target.value)}
-                    style={textInputStyle()}
-                    disabled={hasSpecName}
-                  >
-                    {ARGUMENT_TYPES.map((type) => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
-                  </select>
+                  {!hasSpecName && (
+                    <select
+                      value={arg.type}
+                      onChange={(e) => updateArgument(index, "type", e.target.value)}
+                      style={textInputStyle()}
+                    >
+                      {ARGUMENT_TYPES.map((type) => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
 
-                  <input
-                    value={arg.value}
-                    onChange={(e) => updateArgument(index, "value", e.target.value)}
-                    placeholder={
-                      arg.type === "bool" ? "true or false" : hasSpecName ? `Enter ${paramName}` : "Argument value"
-                    }
-                    style={textInputStyle(fieldAnomalies.some(a => a.severity === 'error'))}
-                  />
+                  {hasSpecName && arg.type === "bool" ? (
+                    <select
+                      value={arg.value}
+                      onChange={(e) => updateArgument(index, "value", e.target.value)}
+                      style={textInputStyle(fieldAnomalies.some(a => a.severity === 'error'))}
+                    >
+                      <option value="">Select boolean...</option>
+                      <option value="true">True</option>
+                      <option value="false">False</option>
+                    </select>
+                  ) : (
+                    <input
+                      value={arg.value}
+                      onChange={(e) => updateArgument(index, "value", e.target.value)}
+                      placeholder={
+                        arg.type === "bool" ? "true or false" : hasSpecName ? `Enter ${paramName}` : "Argument value"
+                      }
+                      style={textInputStyle(fieldAnomalies.some(a => a.severity === 'error'))}
+                    />
+                  )}
 
                   <ActionButton
                     label="Remove"
@@ -885,7 +971,7 @@ export default function ContractInteraction() {
             }}
           >
             {isMainnet
-              ? "Mainnet mode: Simulation available, but transaction submission is disabled for safety."
+              ? "Mainnet mode: Simulation always available. Invoking on Mainnet requires an explicit review step."
               : "Testnet mode: Full simulation and submission available."}
           </div>
 
@@ -907,9 +993,9 @@ export default function ContractInteraction() {
             disabled={simulateLoading || invokeLoading || anomalies.some(a => a.severity === 'error')}
           />
           <ActionButton
-            label={invokeLoading ? "Invoking..." : "Invoke"}
+            label={invokeLoading ? `${invokeStatus || "PENDING"}...` : isMainnet ? "Invoke on Mainnet…" : "Invoke"}
             onClick={handleInvoke}
-            disabled={isMainnet || invokeLoading || simulateLoading || anomalies.some(a => a.severity === 'error')}
+            disabled={invokeLoading || simulateLoading || anomalies.some(a => a.severity === 'error')}
             tone="secondary"
           />
         </div>
@@ -940,13 +1026,42 @@ export default function ContractInteraction() {
             label="Simulation Result"
             data={simulationResult.result}
           />
-          <ResultBlock label="Events" data={simulationResult.events} />
+          <ContractEventDisplay events={simulationResult.events} label="Simulation Events" />
+          <ResourceMetrics
+            cost={simulationResult.cost}
+            footprint={simulationResult.footprint}
+            network={network}
+            inclusionFee={100} // Basic minimum inclusion fee
+          />
         </div>
       )}
 
+          {invokeStatus && (
+            <div style={{ fontSize: "12px", color: invokeStatus === "SUCCESS" ? "var(--green)" : "var(--text-secondary)" }}>
+              Transaction status: {invokeStatus}
+            </div>
+          )}
           {invokeResult && <ResultBlock label="Invocation Result" data={invokeResult} />}
         </>
       )}
+
+      {showMainnetReview && (
+        <MainnetReviewModal
+          actionTitle="Invoke Contract Function"
+          irreversible
+          items={buildMainnetReviewItems()}
+          warnings={[
+            "Contract invocations on Mainnet consume real XLM fees and may modify on-chain state.",
+            "Ensure you have simulated this call successfully before invoking.",
+          ]}
+          onConfirm={() => {
+            setShowMainnetReview(false);
+            _doInvoke();
+          }}
+          onCancel={() => setShowMainnetReview(false)}
+        />
+      )}
     </div>
+    </>
   );
 }

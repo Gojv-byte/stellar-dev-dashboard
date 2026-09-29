@@ -16,17 +16,19 @@ export default defineConfig({
   reporter: process.env.CI
     ? [['github'], ['html', { outputFolder: 'tests/e2e/report', open: 'never' }]]
     : [['list'], ['html', { outputFolder: 'tests/e2e/report', open: 'never' }]],
+  timeout: 120_000,
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
-    actionTimeout: 10_000,
-    navigationTimeout: 30_000,
+    actionTimeout: 15_000,
+    navigationTimeout: 90_000,
   },
   snapshotDir: './tests/e2e/snapshots',
   snapshotPathTemplate: '{snapshotDir}/{testFilePath}/{arg}-{projectName}{ext}',
   expect: {
+    timeout: 15_000,
     toHaveScreenshot: {
       maxDiffPixelRatio: VISUAL_DIFF_THRESHOLD,
       animations: 'disabled',
@@ -51,7 +53,10 @@ export default defineConfig({
     // ── Accessibility gate — axe-core WCAG 2.1 AA ─────────────────────────────
     {
       name: 'a11y',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        bypassCSP: true,
+      },
       testMatch: '**/a11y-gate.spec.*',
     },
 

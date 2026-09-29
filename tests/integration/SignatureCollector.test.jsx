@@ -5,9 +5,10 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import { createSession } from '../../src/lib/multisig';
 import { buildPaymentTransactionXdr } from '../__factories__';
 
+const { _idbStore } = vi.hoisted(() => ({ _idbStore: new Map() }));
 vi.mock('../../src/lib/storage', () => ({
-  getStoredValue: vi.fn().mockResolvedValue(null),
-  setStoredValue: vi.fn(),
+  getStoredValue: vi.fn(async (key) => _idbStore.get(key) ?? null),
+  setStoredValue: vi.fn(async (key, value) => { _idbStore.set(key, value); }),
 }));
 vi.mock('../../src/utils/stateSync', () => ({
   broadcastStateChange: vi.fn(),
@@ -16,6 +17,19 @@ vi.mock('../../src/utils/stateSync', () => ({
   loadSyncedState: vi.fn().mockResolvedValue(null),
   resolveStateConflict: vi.fn((local) => local),
   getTabId: vi.fn().mockReturnValue('test-tab'),
+}));
+vi.mock('../../src/lib/cacheInit', () => ({
+  handleNetworkSwitch: vi.fn(),
+  initCache: vi.fn().mockResolvedValue(undefined),
+  handleTransactionSuccess: vi.fn().mockResolvedValue(undefined),
+  _resetCacheInit: vi.fn(),
+}));
+vi.mock('../../src/lib/requestCancellation', () => ({
+  accountRequests: { abortAll: vi.fn(), begin: vi.fn(() => ({ active: true, commit: vi.fn(() => true), abort: vi.fn() })) },
+  AccountLanes: { Connect: 'account:connect', Offers: 'account:offers', CreationDate: 'account:creation-date' },
+  isCancellation: vi.fn(() => false),
+  isStaleRequestError: vi.fn(() => false),
+  StaleRequestError: class StaleRequestError extends Error {},
 }));
 
 const mockSuccess = vi.fn();
@@ -46,6 +60,7 @@ describe('SignatureCollector (integration)', () => {
 
   beforeEach(async () => {
     localStorage.clear();
+    _idbStore.clear();
     mockSuccess.mockClear();
     mockWarning.mockClear();
     mockError.mockClear();

@@ -23,6 +23,30 @@ export default defineConfig({
         // sw.js lives in /public and is emitted by Vite's publicDir handling.
       },
     },
+    // Emit a machine-readable map of which source modules landed in which output
+    // chunk. `scripts/check-bundle-budgets.mjs` reads it to prove that heavy ML
+    // and graph libraries stay out of the entry/Overview chunks (#969).
+    {
+      name: 'emit-bundle-module-map',
+      apply: 'build',
+      generateBundle(_outputOptions, bundle) {
+        const chunks = {}
+        for (const [fileName, output] of Object.entries(bundle)) {
+          if (output.type !== 'chunk') continue
+          chunks[fileName] = {
+            name: output.name,
+            isEntry: Boolean(output.isEntry),
+            isDynamicEntry: Boolean(output.isDynamicEntry),
+            moduleIds: Object.keys(output.modules).map((id) => id.replace(/\\/g, '/')),
+          }
+        }
+        this.emitFile({
+          type: 'asset',
+          fileName: 'bundle-modules.json',
+          source: JSON.stringify({ generatedAt: new Date().toISOString(), chunks }, null, 2),
+        })
+      },
+    },
   ],
 
   build: {
@@ -56,22 +80,28 @@ export default defineConfig({
         // Manual chunks keep large libraries and feature areas cacheable while
         // route-level dynamic imports keep the app shell small.
         manualChunks(id) {
-          if (!id.includes('node_modules')) {
-            if (id.includes('/src/components/charts/')) return 'charts'
-            if (id.includes('/src/components/assets/')) return 'assets'
-            if (id.includes('/src/components/multisig/')) return 'multisig'
-            if (id.includes('/src/components/deployment/')) return 'deployment'
+          const normalizedId = id.replace(/\\/g, '/')
+          if (!normalizedId.includes('node_modules')) {
+            if (normalizedId.includes('/src/components/charts/')) return 'charts'
+            if (normalizedId.includes('/src/components/assets/')) return 'assets'
+            if (normalizedId.includes('/src/components/multisig/')) return 'multisig'
+            if (normalizedId.includes('/src/components/deployment/')) return 'deployment'
             return undefined
           }
 
-          if (id.includes('@stellar/stellar-sdk')) return 'stellar-sdk'
-          if (id.includes('recharts')) return 'charts-vendor'
-          if (id.includes('lucide-react')) return 'icons-vendor'
-          if (id.includes('i18next')) return 'i18n'
-          if (id.includes('react-router-dom') || id.includes('react-router')) return 'react-vendor'
-          if (id.includes('react-dom') || id.includes('/react/')) return 'react-vendor'
-          if (id.includes('date-fns')) return 'date-vendor'
-          if (id.includes('zustand')) return 'react-vendor'
+          if (normalizedId.includes('@stellar/stellar-sdk')) return 'stellar-sdk'
+          if (normalizedId.includes('recharts')) return 'charts-vendor'
+          if (normalizedId.includes('@tensorflow/')) return 'ml-vendor'
+          if (
+            normalizedId.includes('react-force-graph') ||
+            normalizedId.includes('force-graph') ||
+            normalizedId.includes('d3-force-3d')
+          ) {
+            return 'graph-vendor'
+          }
+          if (normalizedId.includes('lucide-react')) return 'icons-vendor'
+          if (normalizedId.includes('i18next')) return 'i18n'
+          if (normalizedId.includes('date-fns')) return 'date-vendor'
 
           return 'vendor'
         },
