@@ -154,13 +154,25 @@ export function runTypeCheck(tscPath, tsconfigPath, runFn = runTscDefault) {
 
 function runTscDefault(tscPath, args) {
   try {
-    execFileSync(tscPath, args, {
+    const isWin = process.platform === 'win32';
+    // On Windows the local tsc shim is a .cmd batch wrapper; quote it and
+    // invoke through the shell so it resolves correctly.
+    const targetBin = isWin && !tscPath.endsWith('.cmd') && existsSync(`${tscPath}.cmd`)
+      ? `${tscPath}.cmd`
+      : tscPath;
+    const bin = isWin ? `"${targetBin}"` : targetBin;
+    const formattedArgs = isWin
+      ? args.map((arg) => (arg.includes(' ') && !arg.startsWith('"') ? `"${arg}"` : arg))
+      : args;
+    execFileSync(bin, formattedArgs, {
       cwd: ROOT,
       stdio: 'inherit',
       maxBuffer: 50 * 1024 * 1024,
+      shell: isWin,
     });
     return EXIT_PASS;
   } catch (error) {
+    // tsc exits non-zero when type errors are found.
     return error.status ?? EXIT_TYPE_ERROR;
   }
 }

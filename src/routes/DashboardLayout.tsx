@@ -139,9 +139,16 @@ export default function DashboardLayout() {
   useStorageQuotaAlerts();
   useWalletSessionListeners();
 
+  const location = useLocation();
+  const routeMatch = matchRoute(location.pathname);
+  const activeRoute = routeMatch?.route;
+  const isConnectRoute = location.pathname === '/connect';
+  const sharedView = useSharedView();
+  const demoSummary = getDemoFixtureSummarySafe();
+
   useEffect(() => {
     // v2: full multi-layer cache initialization (warm, prune, SW bridge)
-    initCache(useStore.getState().network, useStore.getState().connectedAddress ?? undefined).catch(
+    initCache(useStore.getState().network as unknown as string, useStore.getState().connectedAddress ?? undefined).catch(
       () => {}
     );
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
