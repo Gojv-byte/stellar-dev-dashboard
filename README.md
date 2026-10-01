@@ -58,4 +58,8 @@ Root one-off guides were moved under docs-site/docs so there is one navigable do
 
 ## License
 
-See LICENSE.
+### SEP-38 Integration
+- **Quotes**: Added support for SEP-38 Quotes API. Now discovers ANCHOR_QUOTE_SERVER and can retrieve /info, /prices, /price and request authenticated /quote.
+- **Security**: Authentication leverages SEP-10 tokens for quotes. Be aware that tokens can expire, and quotes have an expiration window handled gracefully with a countdown timer.
+...
+...
