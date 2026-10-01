@@ -207,7 +207,7 @@ const FilterBar = ({ onFilterChange }: FilterBarProps) => {
             gap: '6px',
           }}
         >
-          <span>⚙</span>
+          <span>{'⚙'}</span>
           Filters
           {(selectedSeverities.length > 0 || selectedCategories.length > 0) && (
             <span
@@ -622,7 +622,7 @@ export default function AuditLog() {
                     padding: '4px',
                   }}
                 >
-                  ✕
+                  {'✕'}
                 </button>
               </div>
 
@@ -765,7 +765,6 @@ export default function AuditLog() {
             </div>
           )}
         </div>
-      </div>
     </div>
   );
 }
